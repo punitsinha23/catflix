@@ -1,27 +1,25 @@
-import { AntDesign, Feather } from "@expo/vector-icons";
 import React, { useState, useEffect } from "react";
 import {
   View,
-  Text,
-  FlatList,
-  Image,
   ActivityIndicator,
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Dimensions,
+  FlatList,
 } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { Image } from "expo-image";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
+import { Feather } from "@expo/vector-icons";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+
+const { height, width } = Dimensions.get("window");
 
 const Explore = () => {
-  const [animals, setAnimals] = useState([]);
+  const [gifs, setGifs] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [likedAnimals, setLikedAnimals] = useState({});
   const [hasPermission, setHasPermission] = useState(false);
-
-  const router = useRouter();
-  const params = useLocalSearchParams();
 
   useEffect(() => {
     (async () => {
@@ -33,91 +31,71 @@ const Explore = () => {
     })();
   }, []);
 
-  useEffect(() => {
-    if (params.liked) {
-      setLikedAnimals(JSON.parse(params.liked));
-    }
-  }, [params.liked]);
-
-  const toggleLike = (animal) => {
-    setLikedAnimals((prev) => {
-      const updatedLikes = { ...prev };
-      if (updatedLikes[animal.id]) {
-        delete updatedLikes[animal.id];
-      } else {
-        updatedLikes[animal.id] = animal;
-      }
-      return updatedLikes;
-    });
-  };
-
-  const fetchAnimals = async () => {
+  const fetchNextGif = async () => {
     if (loading) return;
     setLoading(true);
 
     try {
-      const newCats = Array.from({ length: 3 }, (_, index) => ({
-        id: `cat_${Date.now()}_${index}`,
-        image: `https://cataas.com/cat/gif?random=${Date.now()}_${index}`,
-        name: "Cat gifs",
-      }));
-
-      setAnimals((prev) => [...prev, ...newCats]);
+      const newGif = {
+        id: Date.now().toString(),
+        url: `https://cataas.com/cat/gif?${Date.now()}`,
+      };
+      setGifs((prev) => [...prev, newGif]);
     } catch (error) {
-      console.error("Error fetching cat GIFs:", error);
-      Alert.alert("Fetch Error", "Failed to load cat GIFs.");
+      console.error("Error fetching GIF:", error);
+      Alert.alert("Error", "Failed to fetch GIF.");
     }
-
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchAnimals();
+    fetchNextGif();
   }, []);
 
-  const downloadImage = async (imageUrl) => {
+  const downloadGif = async (gifUrl) => {
     try {
       if (!hasPermission) {
         Alert.alert("Permission Required", "Enable media access to download images.");
         return;
       }
-      const fileName = imageUrl.split("/").pop();
+
+      const fileName = `cat_gif_${Date.now()}.gif`;
       const fileUri = FileSystem.cacheDirectory + fileName;
-      const { uri } = await FileSystem.downloadAsync(imageUrl, fileUri);
+
+      const { uri } = await FileSystem.downloadAsync(gifUrl, fileUri);
       const asset = await MediaLibrary.createAssetAsync(uri);
-      await MediaLibrary.createAlbumAsync("Downloaded Images", asset, false);
-      Alert.alert("Download Successful", "Image saved to gallery!");
+      await MediaLibrary.createAlbumAsync("Downloaded GIFs", asset, false);
+
+      Alert.alert("Download Successful", "GIF saved to gallery!");
     } catch (error) {
-      console.error("Error downloading image:", error);
+      console.error("Error downloading GIF:", error);
       Alert.alert("Download Failed", "Something went wrong.");
     }
   };
 
   return (
-    <View style={styles.container}>
-
-      <FlatList
-        data={animals}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Image source={{ uri: item.image }} style={styles.image} />
-            <Text style={styles.name}>{item.name.toUpperCase()}</Text>
-            <View style={styles.buttonRow}>
-              <TouchableOpacity onPress={() => toggleLike(item)} style={styles.likeButton}>
-                <AntDesign name={likedAnimals[item.id] ? "heart" : "hearto"} size={24} color={likedAnimals[item.id] ? "red" : "gray"} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => downloadImage(item.image)} style={styles.downloadButton}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={styles.container}>
+        <FlatList
+          data={gifs}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              <Image source={{ uri: item.url }} style={styles.gif} contentFit="cover" transition={500} />
+              <TouchableOpacity onPress={() => downloadGif(item.url)} style={styles.downloadButton}>
                 <Feather name="download" size={24} color="black" />
               </TouchableOpacity>
             </View>
-          </View>
-        )}
-        onEndReached={fetchAnimals}
-        onEndReachedThreshold={0.7}
-        ListFooterComponent={loading ? <ActivityIndicator size="large" color="blue" /> : null}
-      />
-    </View>
+          )}
+          scrollEnabled={true}
+          nestedScrollEnabled={true}
+          showsVerticalScrollIndicator={false}
+          onEndReached={fetchNextGif}
+          onEndReachedThreshold={0.1}
+          ListFooterComponent={loading ? <ActivityIndicator size="large" color="blue" /> : null}
+        />
+      </View>
+    </GestureHandlerRootView>
   );
 };
 
@@ -127,45 +105,29 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     padding: 10,
   },
-  viewLikedButton: {
-    backgroundColor: "tomato",
-    padding: 12,
-    borderRadius: 10,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  viewLikedText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
   card: {
     backgroundColor: "#f8f8f8",
     borderRadius: 10,
-    padding: 10,
     marginVertical: 10,
     alignItems: "center",
     elevation: 5,
+    overflow: "hidden",
+    height: height * 0.8,
+    width: width * 0.95,
+    justifyContent: "center",
   },
-  image: {
-    width: "100%",
-    aspectRatio: 1,
-    resizeMode: "cover",
-    borderRadius: 15,
+  gif: {
+    width: "99%",
+    height: "99%",
   },
-  name: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginTop: 10,
-    textAlign: "center",
+  downloadButton: {
+    backgroundColor: "lightgray",
+    padding: 10,
+    borderRadius: 50,
+    position: "absolute",
+    bottom: 20,
+    right: 20,
   },
-  buttonRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "90%",
-    marginTop: 10,
-  },
- 
 });
 
 export default Explore;

@@ -12,12 +12,15 @@ import { Feather } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 
+// Function to shuffle the images (so they're randomly arranged)
+const shuffleArray = (array) => array.sort(() => Math.random() - 0.5);
+
 const AnimalGallery = () => {
   const [animals, setAnimals] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
 
-  // Request permission for media library
+  // Request media library permission
   useEffect(() => {
     (async () => {
       const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -32,24 +35,25 @@ const AnimalGallery = () => {
 
     try {
       const [dogResponse, catResponse] = await Promise.all([
-        fetch("https://dog.ceo/api/breeds/image/random/5"),
-        fetch("https://api.thecatapi.com/v1/images/search?limit=5"),
+        fetch("https://dog.ceo/api/breeds/image/random/5"), // Fetch 5 random dogs
+        fetch("https://api.thecatapi.com/v1/images/search?limit=5"), // Fetch 5 random cats
       ]);
 
       const dogData = await dogResponse.json();
       const catData = await catResponse.json();
 
-      const newDogs = dogData.message.map((imageUrl) => ({
-        id: `dog-${imageUrl}`,
+      const newDogs = dogData.message.map((imageUrl, index) => ({
+        id: `dog-${Date.now()}-${index}`, // Unique ID
         image: imageUrl,
       }));
 
-      const newCats = catData.map((item) => ({
-        id: `cat-${item.id}`,
+      const newCats = catData.map((item, index) => ({
+        id: `cat-${Date.now()}-${index}`, 
         image: item.url,
       }));
 
-      setAnimals((prev) => [...prev, ...newDogs, ...newCats]);
+     
+      setAnimals((prev) => shuffleArray([...prev, ...newDogs, ...newCats]));
     } catch (error) {
       Alert.alert("Error", "Failed to load images.");
     }
@@ -57,11 +61,12 @@ const AnimalGallery = () => {
     setLoading(false);
   };
 
+  // Fetch initial images
   useEffect(() => {
     fetchAnimals();
   }, []);
 
-  // Download image
+  // Download image function
   const downloadImage = async (imageUrl) => {
     if (!hasPermission) {
       Alert.alert("Permission Required", "Enable media access to download images.");
@@ -88,12 +93,15 @@ const AnimalGallery = () => {
         renderItem={({ item }) => (
           <View style={styles.card}>
             <Image source={{ uri: item.image }} style={styles.image} />
-            <TouchableOpacity onPress={() => downloadImage(item.image)} style={styles.downloadButton}>
+            <TouchableOpacity
+              onPress={() => downloadImage(item.image)}
+              style={styles.downloadButton}
+            >
               <Feather name="download" size={24} color="black" />
             </TouchableOpacity>
           </View>
         )}
-        onEndReached={fetchAnimals}
+        onEndReached={fetchAnimals} // Fetch more images when scrolling
         onEndReachedThreshold={0.5}
         ListFooterComponent={loading ? <ActivityIndicator size="large" color="blue" /> : null}
       />
@@ -123,9 +131,12 @@ const styles = StyleSheet.create({
     borderRadius: 15,
   },
   downloadButton: {
-    marginTop: 10,
+    position: "absolute",
+    bottom: 10,
+    right: 10,
+    padding: 10,
+    backgroundColor: "rgba(255,255,255,0.7)",
     borderRadius: 5,
-    marginRight:400
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   ActivityIndicator,
@@ -7,6 +7,7 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  RefreshControl,
 } from "react-native";
 import { Image } from "expo-image";
 import * as FileSystem from "expo-file-system";
@@ -19,46 +20,62 @@ const { height, width } = Dimensions.get("window");
 const Explore = () => {
   const [gifs, setGifs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission Required", "Please enable media access to download images.");
-      }
-      setHasPermission(status === "granted");
+      await requestPermissions();
+      await fetchNextGifs(); // Initial fetch
     })();
   }, []);
 
-  const fetchNextGif = async () => {
+  const requestPermissions = async () => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    setHasPermission(status === "granted");
+  };
+
+  const fetchNextGifs = async () => {
     if (loading) return;
     setLoading(true);
 
     try {
-      const newGif = {
-        id: Date.now().toString(),
-        url: `https://cataas.com/cat/gif?${Date.now()}`,
-      };
-      setGifs((prev) => [...prev, newGif]);
+      const newGifs = await Promise.all(
+        Array.from({ length: 3 }).map(async () => {
+          const timestamp = Date.now();
+          return {
+            id: `${timestamp}-${Math.random().toString(36).substring(7)}`,
+            url: `https://cataas.com/cat/gif?${timestamp}`,
+          };
+        })
+      );
+
+      setGifs((prev) => [...prev, ...newGifs]);
     } catch (error) {
-      console.error("Error fetching GIF:", error);
-      Alert.alert("Error", "Failed to fetch GIF.");
+      console.error("Error fetching GIFs:", error);
+      Alert.alert("Error", "Failed to fetch GIFs.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  useEffect(() => {
-    fetchNextGif();
-  }, []);
+  const refreshGifs = async () => {
+    setRefreshing(true);
+    setGifs([]); // Clear old GIFs before refreshing
+    await fetchNextGifs();
+    setRefreshing(false);
+  };
 
   const downloadGif = async (gifUrl) => {
-    try {
+    if (!hasPermission) {
+      await requestPermissions();
       if (!hasPermission) {
         Alert.alert("Permission Required", "Enable media access to download images.");
         return;
       }
+    }
 
+    try {
       const fileName = `cat_gif_${Date.now()}.gif`;
       const fileUri = FileSystem.cacheDirectory + fileName;
 
@@ -66,12 +83,24 @@ const Explore = () => {
       const asset = await MediaLibrary.createAssetAsync(uri);
       await MediaLibrary.createAlbumAsync("Downloaded GIFs", asset, false);
 
-      Alert.alert("Download Successful", "GIF saved to gallery!");
+      Alert.alert("Success", "GIF saved to gallery!");
     } catch (error) {
       console.error("Error downloading GIF:", error);
       Alert.alert("Download Failed", "Something went wrong.");
     }
   };
+
+  const renderItem = useCallback(
+    ({ item }) => (
+      <View style={styles.card}>
+        <Image source={{ uri: item.url }} style={styles.gif} contentFit="cover" transition={500} />
+        <TouchableOpacity onPress={() => downloadGif(item.url)} style={styles.downloadButton}>
+          <Feather name="download" size={24} color="black" />
+        </TouchableOpacity>
+      </View>
+    ),
+    []
+  );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -79,20 +108,14 @@ const Explore = () => {
         <FlatList
           data={gifs}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Image source={{ uri: item.url }} style={styles.gif} contentFit="cover" transition={500} />
-              <TouchableOpacity onPress={() => downloadGif(item.url)} style={styles.downloadButton}>
-                <Feather name="download" size={24} color="black" />
-              </TouchableOpacity>
-            </View>
-          )}
-          scrollEnabled={true}
-          nestedScrollEnabled={true}
+          renderItem={renderItem}
           showsVerticalScrollIndicator={false}
-          onEndReached={fetchNextGif}
-          onEndReachedThreshold={0.1}
+          onEndReached={fetchNextGifs}
+          onEndReachedThreshold={0.2}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshGifs} />}
           ListFooterComponent={loading ? <ActivityIndicator size="large" color="blue" /> : null}
+          windowSize={5}
+          removeClippedSubviews={true}
         />
       </View>
     </GestureHandlerRootView>
@@ -112,13 +135,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     elevation: 5,
     overflow: "hidden",
-    height: height * 0.8,
     width: width * 0.95,
+    height: height * 0.5,
     justifyContent: "center",
   },
   gif: {
-    width: "99%",
-    height: "99%",
+    width: "100%",
+    height: "100%",
+    resizeMode: "contain",
   },
   downloadButton: {
     backgroundColor: "lightgray",
